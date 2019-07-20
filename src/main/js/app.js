@@ -23,7 +23,7 @@ class App extends React.Component {
 		this.onNavigate = this.onNavigate.bind(this);
 
 	}
-	
+
 	loadFromServer(pageSize) {
 		follow(client, root, [
 			{rel: 'employees', params: {size: pageSize}}]
@@ -39,10 +39,10 @@ class App extends React.Component {
 			});
 		}).then(employeeCollection => {
 			return employeeCollection.entity._embedded.employees.map(employee =>
-					client({
-						method: 'GET',
-						path: employee._links.self.href
-					})
+				client({
+					method: 'GET',
+					path: employee._links.self.href
+				})
 			);
 		}).then(employeePromises => {
 			return when.all(employeePromises);
@@ -55,18 +55,18 @@ class App extends React.Component {
 			});
 		});
 	}
-	
+
 	onCreate(newEmployee) {
-		follow(client, root, ['employees']).then(employeeCollection => {
+		const self = this;
+		follow(client, root, ['employees']).then(response => {
 			return client({
 				method: 'POST',
-				path: employeeCollection.entity._links.self.href,
+				path: response.entity._links.self.href,
 				entity: newEmployee,
 				headers: {'Content-Type': 'application/json'}
 			})
 		}).then(response => {
-			return follow(client, root, [
-				{rel: 'employees', params: {'size': this.state.pageSize}}]);
+			return follow(client, root, [{rel: 'employees', params: {'size': self.state.pageSize}}]);
 		}).done(response => {
 			if (typeof response.entity._links.last !== "undefined") {
 				this.onNavigate(response.entity._links.last.href);
@@ -75,7 +75,7 @@ class App extends React.Component {
 			}
 		});
 	}
-	
+
 	onUpdate(employee, updatedEmployee) {
 		client({
 			method: 'PUT',
@@ -94,9 +94,9 @@ class App extends React.Component {
 			}
 		});
 	}
-	
+
 	onDelete(employee) {
-		client({method: 'DELETE', path: employee._links.self.href}).done(response => {
+		client({method: 'DELETE', path: employee.entity._links.self.href}).done(response => {
 			this.loadFromServer(this.state.pageSize);
 		});
 	}
@@ -109,10 +109,10 @@ class App extends React.Component {
 			this.links = employeeCollection.entity._links;
 
 			return employeeCollection.entity._embedded.employees.map(employee =>
-					client({
-						method: 'GET',
-						path: employee._links.self.href
-					})
+				client({
+					method: 'GET',
+					path: employee._links.self.href
+				})
 			);
 		}).then(employeePromises => {
 			return when.all(employeePromises);
@@ -125,7 +125,7 @@ class App extends React.Component {
 			});
 		});
 	}
-	
+
 	updatePageSize(pageSize) {
 		if (pageSize !== this.state.pageSize) {
 			this.loadFromServer(pageSize);
@@ -135,7 +135,7 @@ class App extends React.Component {
 	componentDidMount() {
 		this.loadFromServer(this.state.pageSize);
 	}
-	
+
 
 	render() {
 		return (
@@ -144,6 +144,7 @@ class App extends React.Component {
 				<EmployeeList employees={this.state.employees}
 							  links={this.state.links}
 							  pageSize={this.state.pageSize}
+							  attributes={this.state.attributes}
 							  onNavigate={this.onNavigate}
 							  onUpdate={this.onUpdate}
 							  onDelete={this.onDelete}
@@ -151,7 +152,7 @@ class App extends React.Component {
 			</div>
 		)
 	}
-};
+}
 
 class UpdateDialog extends React.Component{
 	
@@ -200,7 +201,7 @@ class UpdateDialog extends React.Component{
 		)
 	}
 	
-};
+}
 
 class CreateDialog extends React.Component {
 
@@ -216,13 +217,9 @@ class CreateDialog extends React.Component {
 			newEmployee[attribute] = ReactDOM.findDOMNode(this.refs[attribute]).value.trim();
 		});
 		this.props.onCreate(newEmployee);
-
-		// clear out the dialog's inputs
 		this.props.attributes.forEach(attribute => {
-			ReactDOM.findDOMNode(this.refs[attribute]).value = '';
+			ReactDOM.findDOMNode(this.refs[attribute]).value = ''; // clear out the dialog's inputs
 		});
-
-		// Navigate away from the dialog to hide it.
 		window.location = "#";
 	}
 
@@ -232,7 +229,6 @@ class CreateDialog extends React.Component {
 				<input type="text" placeholder={attribute} ref={attribute} className="field"/>
 			</p>
 		);
-
 		return (
 			<div>
 				<a href="#createEmployee">Create</a>
@@ -272,8 +268,7 @@ class EmployeeList extends React.Component{
 		if (/^[0-9]+$/.test(pageSize)) {
 			this.props.updatePageSize(pageSize);
 		} else {
-			ReactDOM.findDOMNode(this.refs.pageSize).value =
-				pageSize.substring(0, pageSize.length - 1);
+			ReactDOM.findDOMNode(this.refs.pageSize).value = pageSize.substring(0, pageSize.length - 1);
 		}
 	}
 
@@ -297,10 +292,14 @@ class EmployeeList extends React.Component{
 		this.props.onNavigate(this.props.links.last.href);
 	}
 
-	
+
 	render() {
 		const employees = this.props.employees.map(employee =>
-			<Employee key={employee._links.self.href} employee={employee} onDelete={this.props.onDelete}/>
+			<Employee key={employee.entity._links.self.href}
+					  employee={employee}
+					  attributes={this.props.attributes}
+					  onUpdate={this.props.onUpdate}
+					  onDelete={this.props.onDelete}/>
 		);
 
 		const navLinks = [];
@@ -322,13 +321,14 @@ class EmployeeList extends React.Component{
 				<input ref="pageSize" defaultValue={this.props.pageSize} onInput={this.handleInput}/>
 				<table>
 					<tbody>
-						<tr>
-							<th>First Name</th>
-							<th>Last Name</th>
-							<th>Description</th>
-							<th></th>
-						</tr>
-						{employees}
+					<tr>
+						<th>First Name</th>
+						<th>Last Name</th>
+						<th>Description</th>
+						<th></th>
+						<th></th>
+					</tr>
+					{employees}
 					</tbody>
 				</table>
 				<div>
@@ -354,17 +354,17 @@ class Employee extends React.Component{
 	render() {
 		return (
 			<tr>
-				<td>{this.props.employee.firstName}</td>
-				<td>{this.props.employee.lastName}</td>
-				<td>{this.props.employee.description}</td>
+				<td>{this.props.employee.entity.firstName}</td>
+				<td>{this.props.employee.entity.lastName}</td>
+				<td>{this.props.employee.entity.description}</td>
 				<td>
-				<UpdateDialog employee={this.props.employee}
-							  attributes={this.props.attributes}
-							  onUpdate={this.props.onUpdate}/>
+					<UpdateDialog employee={this.props.employee}
+								  attributes={this.props.attributes}
+								  onUpdate={this.props.onUpdate}/>
 				</td>
 				<td>
 					<button onClick={this.handleDelete}>Delete</button>
-				</td>	
+				</td>
 			</tr>
 		)
 	}

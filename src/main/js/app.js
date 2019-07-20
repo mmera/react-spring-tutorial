@@ -8,7 +8,7 @@ const when = require('when');
 
 const follow = require('./follow');
 
-const root = '/api'
+const root = '/api';
 // end::vars[]
 
 class App extends React.Component {

@@ -1,17 +1,15 @@
 'use strict';
 
-// tag::vars[]
 const React = require('react');
 const ReactDOM = require('react-dom');
 const when = require('when');
 const client = require('./client');
 
-const follow = require('./follow');
+const follow = require('./follow'); // function to hop multiple links by "rel"
 
-var stompClient = require('./websocket-listener')
+const stompClient = require('./websocket-listener');
 
 const root = '/api';
-// end::vars[]
 
 class App extends React.Component {
 
@@ -37,6 +35,11 @@ class App extends React.Component {
 				path: employeeCollection.entity._links.profile.href,
 				headers: {'Accept': 'application/schema+json'}
 			}).then(schema => {
+				// tag::json-schema-filter[]
+				/**
+				 * Filter unneeded JSON Schema properties, like uri references and
+				 * subtypes ($ref).
+				 */
 				Object.keys(schema.entity.properties).forEach(function (property) {
 					if (schema.entity.properties[property].hasOwnProperty('format') &&
 						schema.entity.properties[property].format === 'uri') {
@@ -50,6 +53,7 @@ class App extends React.Component {
 				this.schema = schema.entity;
 				this.links = employeeCollection.entity._links;
 				return employeeCollection;
+				// end::json-schema-filter[]
 			});
 		}).then(employeeCollection => {
 			this.page = employeeCollection.entity.page;
@@ -72,6 +76,7 @@ class App extends React.Component {
 		});
 	}
 
+	// tag::on-create[]
 	onCreate(newEmployee) {
 		follow(client, root, ['employees']).done(response => {
 			client({
@@ -82,7 +87,9 @@ class App extends React.Component {
 			})
 		})
 	}
+	// end::on-create[]
 
+	// tag::on-update[]
 	onUpdate(employee, updatedEmployee) {
 		if(employee.entity.manager.name === this.state.loggedInManager) {
 			updatedEmployee["manager"] = employee.entity.manager;
@@ -110,16 +117,20 @@ class App extends React.Component {
 			alert("You are not authorized to update");
 		}
 	}
+	// end::on-update[]
 
+	// tag::on-delete[]
 	onDelete(employee) {
-		client({method: 'DELETE', path: employee.entity._links.self.href}).done(response => {},
+		client({method: 'DELETE', path: employee.entity._links.self.href}
+		).done(response => {/* let the websocket handle updating the UI */},
 			response => {
 				if (response.status.code === 403) {
 					alert('ACCESS DENIED: You are not authorized to delete ' +
 						employee.entity._links.self.href);
 				}
-		});
+			});
 	}
+	// end::on-delete[]
 
 	onNavigate(navUri) {
 		client({
@@ -127,6 +138,7 @@ class App extends React.Component {
 			path: navUri
 		}).then(employeeCollection => {
 			this.links = employeeCollection.entity._links;
+			this.page = employeeCollection.entity.page;
 
 			return employeeCollection.entity._embedded.employees.map(employee =>
 				client({
@@ -138,6 +150,7 @@ class App extends React.Component {
 			return when.all(employeePromises);
 		}).done(employees => {
 			this.setState({
+				page: this.page,
 				employees: employees,
 				attributes: Object.keys(this.schema.properties),
 				pageSize: this.state.pageSize,
@@ -197,6 +210,7 @@ class App extends React.Component {
 	}
 	// end::websocket-handlers[]
 
+	// tag::register-handlers[]
 	componentDidMount() {
 		this.loadFromServer(this.state.pageSize);
 		stompClient.register([
@@ -205,6 +219,7 @@ class App extends React.Component {
 			{route: '/topic/deleteEmployee', callback: this.refreshCurrentPage}
 		]);
 	}
+	// end::register-handlers[]
 
 	render() {
 		return (
@@ -219,71 +234,10 @@ class App extends React.Component {
 							  onUpdate={this.onUpdate}
 							  onDelete={this.onDelete}
 							  updatePageSize={this.updatePageSize}
-							  loggedInManager={this.loggedInManager}/>
-
+							  loggedInManager={this.state.loggedInManager}/>
 			</div>
 		)
 	}
-}
-
-class UpdateDialog extends React.Component{
-	
-	constructor(props) {
-		super(props);
-		this.handleSubmit = this.handleSubmit.bind(this);
-	}
-
-	handleSubmit(e) {
-		e.preventDefault();
-		const updatedEmployee = {};
-		this.props.attributes.forEach(attribute => {
-			updatedEmployee[attribute] = ReactDOM.findDOMNode(this.refs[attribute]).value.trim();
-		});
-		this.props.onUpdate(this.props.employee, updatedEmployee);
-		window.location = "#";
-	}
-
-	render() {
-		const inputs = this.props.attributes.map(attribute =>
-			<p key={this.props.employee.entity[attribute]}>
-				<input type="text" placeholder={attribute}
-					   defaultValue={this.props.employee.entity[attribute]}
-					   ref={attribute} className="field"/>
-			</p>
-		);
-
-		const dialogId = "updateEmployee-" + this.props.employee.entity._links.self.href;
-
-		const isManagerCorrect = this.props.employee.entity.manager.name === this.props.loggedInManager;
-
-		if (isManagerCorrect === false) {
-			return (
-				<div>
-					<a>Not Your Employee</a>
-				</div>
-			)
-		} else {
-			return (
-				<div>
-					<a href={"#" + dialogId}>Update</a>
-
-					<div id={dialogId} className="modalDialog">
-						<div>
-							<a href="#" title="Close" className="close">X</a>
-
-							<h2>Update an employee</h2>
-
-							<form>
-								{inputs}
-								<button onClick={this.handleSubmit}>Update</button>
-							</form>
-						</div>
-					</div>
-				</div>
-			)
-		}
-	}
-	
 }
 
 class CreateDialog extends React.Component {
@@ -320,7 +274,7 @@ class CreateDialog extends React.Component {
 					<div>
 						<a href="#" title="Close" className="close">X</a>
 
-						<h2>Create New Employee</h2>
+						<h2>Create new employee</h2>
 
 						<form>
 							{inputs}
@@ -331,11 +285,70 @@ class CreateDialog extends React.Component {
 			</div>
 		)
 	}
+}
+
+class UpdateDialog extends React.Component {
+
+	constructor(props) {
+		super(props);
+		this.handleSubmit = this.handleSubmit.bind(this);
+	}
+
+	handleSubmit(e) {
+		e.preventDefault();
+		const updatedEmployee = {};
+		this.props.attributes.forEach(attribute => {
+			updatedEmployee[attribute] = ReactDOM.findDOMNode(this.refs[attribute]).value.trim();
+		});
+		this.props.onUpdate(this.props.employee, updatedEmployee);
+		window.location = "#";
+	}
+
+	render() {
+		const inputs = this.props.attributes.map(attribute =>
+			<p key={this.props.employee.entity[attribute]}>
+				<input type="text" placeholder={attribute}
+					   defaultValue={this.props.employee.entity[attribute]}
+					   ref={attribute} className="field"/>
+			</p>
+		);
+
+		const dialogId = "updateEmployee-" + this.props.employee.entity._links.self.href;
+
+		const isManagerCorrect = this.props.employee.entity.manager.name == this.props.loggedInManager;
+
+		if (isManagerCorrect === false) {
+			return (
+				<div>
+					<a>Not Your Employee</a>
+				</div>
+			)
+		} else {
+			return (
+				<div>
+					<a href={"#" + dialogId}>Update</a>
+
+					<div id={dialogId} className="modalDialog">
+						<div>
+							<a href="#" title="Close" className="close">X</a>
+
+							<h2>Update an employee</h2>
+
+							<form>
+								{inputs}
+								<button onClick={this.handleSubmit}>Update</button>
+							</form>
+						</div>
+					</div>
+				</div>
+			)
+		}
+	}
 
 }
 
-class EmployeeList extends React.Component{
-	
+class EmployeeList extends React.Component {
+
 	constructor(props) {
 		super(props);
 		this.handleNavFirst = this.handleNavFirst.bind(this);
@@ -355,7 +368,7 @@ class EmployeeList extends React.Component{
 		}
 	}
 
-	handleNavFirst(e){
+	handleNavFirst(e) {
 		e.preventDefault();
 		this.props.onNavigate(this.props.links.first.href);
 	}
@@ -374,7 +387,6 @@ class EmployeeList extends React.Component{
 		e.preventDefault();
 		this.props.onNavigate(this.props.links.last.href);
 	}
-
 
 	render() {
 		const pageInfo = this.props.page.hasOwnProperty("number") ?
@@ -428,15 +440,15 @@ class EmployeeList extends React.Component{
 	}
 }
 
+// tag::employee[]
+class Employee extends React.Component {
 
-class Employee extends React.Component{
-	
-	constructor(props){
+	constructor(props) {
 		super(props);
 		this.handleDelete = this.handleDelete.bind(this);
 	}
 
-	handleDelete(){
+	handleDelete() {
 		this.props.onDelete(this.props.employee);
 	}
 
@@ -460,8 +472,9 @@ class Employee extends React.Component{
 		)
 	}
 }
+// end::employee[]
 
 ReactDOM.render(
-		<App loggedInManager={document.getElementById('managername').innerHTML } />,
-		document.getElementById('react')
-	)
+	<App loggedInManager={document.getElementById('managername').innerHTML } />,
+	document.getElementById('react')
+)

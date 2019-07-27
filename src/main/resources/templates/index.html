@@ -7,16 +7,16 @@
 </head>
 <body>
 
-    <div>
-        Hello, <span id="managername" th:text="${#authentication.name}">user</span>.
-        <form th:action="@{/logout}" method="post">
-            <input type="submit" value="Log Out"/>
-        </form>
-    </div>
+<div>
+    Hello, <span id="managername" th:text="${#authentication.name}">user</span>.
+    <form th:action="@{/logout}" method="post">
+        <input type="submit" value="Log Out"/>
+    </form>
+</div>
 
-    <div id="react"></div>
+<div id="react"></div>
 
-    <script src="built/bundle.js"></script>
+<script src="built/bundle.js"></script>
 
 </body>
 </html>

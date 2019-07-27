@@ -6,6 +6,7 @@ const ReactDOM = require('react-dom');
 const client = require('./client');
 const when = require('when');
 
+var stompClient = require('./websocket-listener')
 const follow = require('./follow');
 
 const root = '/api';
@@ -15,13 +16,15 @@ class App extends React.Component {
 
 	constructor(props) {
 		super(props);
-		this.state = {employees: [], attributes: [], pageSize: 2, links: {}};
+		this.state = {employees: [], attributes: [], page: 1, pageSize: 2, links: {}
+			, loggedInManager: this.props.loggedInManager};
 		this.updatePageSize = this.updatePageSize.bind(this);
 		this.onCreate = this.onCreate.bind(this);
 		this.onUpdate = this.onUpdate.bind(this);
 		this.onDelete = this.onDelete.bind(this);
 		this.onNavigate = this.onNavigate.bind(this);
-
+		this.refreshCurrentPage = this.refreshCurrentPage.bind(this);
+		this.refreshAndGoToLastPage = this.refreshAndGoToLastPage.bind(this);
 	}
 
 	loadFromServer(pageSize) {
@@ -33,11 +36,22 @@ class App extends React.Component {
 				path: employeeCollection.entity._links.profile.href,
 				headers: {'Accept': 'application/schema+json'}
 			}).then(schema => {
+				Object.keys(schema.entity.properties).forEach(function (property) {
+					if (schema.entity.properties[property].hasOwnProperty('format') &&
+						schema.entity.properties[property].format === 'uri') {
+						delete schema.entity.properties[property];
+					}
+					else if (schema.entity.properties[property].hasOwnProperty('$ref')) {
+						delete schema.entity.properties[property];
+					}
+				});
+
 				this.schema = schema.entity;
 				this.links = employeeCollection.entity._links;
 				return employeeCollection;
 			});
 		}).then(employeeCollection => {
+			this.page = employeeCollection.entity.page;
 			return employeeCollection.entity._embedded.employees.map(employee =>
 				client({
 					method: 'GET',
@@ -48,6 +62,7 @@ class App extends React.Component {
 			return when.all(employeePromises);
 		}).done(employees => {
 			this.setState({
+				page: this.page,
 				employees: employees,
 				attributes: Object.keys(this.schema.properties),
 				pageSize: pageSize,
@@ -57,47 +72,50 @@ class App extends React.Component {
 	}
 
 	onCreate(newEmployee) {
-		const self = this;
-		follow(client, root, ['employees']).then(response => {
-			return client({
+		follow(client, root, ['employees']).done(response => {
+			client({
 				method: 'POST',
 				path: response.entity._links.self.href,
 				entity: newEmployee,
 				headers: {'Content-Type': 'application/json'}
 			})
-		}).then(response => {
-			return follow(client, root, [{rel: 'employees', params: {'size': self.state.pageSize}}]);
-		}).done(response => {
-			if (typeof response.entity._links.last !== "undefined") {
-				this.onNavigate(response.entity._links.last.href);
-			} else {
-				this.onNavigate(response.entity._links.self.href);
-			}
-		});
+		})
 	}
 
 	onUpdate(employee, updatedEmployee) {
-		client({
-			method: 'PUT',
-			path: employee.entity._links.self.href,
-			entity: updatedEmployee,
-			headers: {
-				'Content-Type': 'application/json',
-				'If-Match': employee.headers.Etag
-			}
-		}).done(response => {
-			this.loadFromServer(this.state.pageSize);
-		}, response => {
-			if (response.status.code === 412) {
-				alert('DENIED: Unable to update ' +
-					employee.entity._links.self.href + '. Your copy is stale.');
-			}
-		});
+		if (employee.entity.manager.name === this.state.loggedInManager) {
+			updatedEmployee["manager"] = employee.entity.manager;
+			client({
+				method: 'PUT',
+				path: employee.entity._links.self.href,
+				entity: updatedEmployee,
+				headers: {
+					'Content-Type': 'application/json',
+					'If-Match': employee.headers.Etag
+				}
+			}).done(response => {
+			}, response => {
+				if (response.status.code === 403) {
+					alert('ACCESS DENIED: You are not authorized to update ' +
+						employee.entity._links.self.href);
+				}
+				if (response.status.code === 412) {
+					alert('DENIED: Unable to update ' + employee.entity._links.self.href +
+						'. Your copy is stale.');
+				}
+			});
+		} else {
+			alert("You are not authorized to update");
+		}
 	}
 
 	onDelete(employee) {
-		client({method: 'DELETE', path: employee.entity._links.self.href}).done(response => {
-			this.loadFromServer(this.state.pageSize);
+		client({method: 'DELETE', path: employee.entity._links.self.href}).done(response => {},
+			response => {
+				if (response.status.code === 403) {
+					alert('ACCESS DENIED: You are not authorized to delete ' +
+						employee.entity._links.self.href);
+				}
 		});
 	}
 
@@ -132,16 +150,66 @@ class App extends React.Component {
 		}
 	}
 
-	componentDidMount() {
-		this.loadFromServer(this.state.pageSize);
+	// tag::websocket-handlers[]
+	refreshAndGoToLastPage(message) {
+		follow(client, root, [{
+			rel: 'employees',
+			params: {size: this.state.pageSize}
+		}]).done(response => {
+			if (response.entity._links.last !== undefined) {
+				this.onNavigate(response.entity._links.last.href);
+			} else {
+				this.onNavigate(response.entity._links.self.href);
+			}
+		})
 	}
 
+	refreshCurrentPage(message) {
+		follow(client, root, [{
+			rel: 'employees',
+			params: {
+				size: this.state.pageSize,
+				page: this.state.page.number
+			}
+		}]).then(employeeCollection => {
+			this.links = employeeCollection.entity._links;
+			this.page = employeeCollection.entity.page;
+
+			return employeeCollection.entity._embedded.employees.map(employee => {
+				return client({
+					method: 'GET',
+					path: employee._links.self.href
+				})
+			});
+		}).then(employeePromises => {
+			return when.all(employeePromises);
+		}).then(employees => {
+			this.setState({
+				page: this.page,
+				employees: employees,
+				attributes: Object.keys(this.schema.properties),
+				pageSize: this.state.pageSize,
+				links: this.links
+			});
+		});
+	}
+	// end::websocket-handlers[]
+
+	componentDidMount() {
+		this.loadFromServer(this.state.pageSize);
+		stompClient.register([
+			{route: '/topic/newEmployee', callback: this.refreshAndGoToLastPage},
+			{route: '/topic/updateEmployee', callback: this.refreshCurrentPage},
+			{route: '/topic/deleteEmployee', callback: this.refreshCurrentPage}
+		]);
+	}
 
 	render() {
 		return (
 			<div>
 				<CreateDialog attributes={this.state.attributes} onCreate={this.onCreate}/>
-				<EmployeeList employees={this.state.employees}
+				<EmployeeList page={this.state.page}
+							  employees={this.state.employees}
 							  links={this.state.links}
 							  pageSize={this.state.pageSize}
 							  attributes={this.state.attributes}
@@ -357,10 +425,12 @@ class Employee extends React.Component{
 				<td>{this.props.employee.entity.firstName}</td>
 				<td>{this.props.employee.entity.lastName}</td>
 				<td>{this.props.employee.entity.description}</td>
+				<td>{this.props.employee.entity.manager.name}</td>
 				<td>
 					<UpdateDialog employee={this.props.employee}
 								  attributes={this.props.attributes}
-								  onUpdate={this.props.onUpdate}/>
+								  onUpdate={this.props.onUpdate}
+								  loggedInManager={this.props.loggedInManager}/>
 				</td>
 				<td>
 					<button onClick={this.handleDelete}>Delete</button>

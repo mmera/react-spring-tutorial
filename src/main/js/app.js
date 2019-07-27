@@ -3,11 +3,12 @@
 // tag::vars[]
 const React = require('react');
 const ReactDOM = require('react-dom');
-const client = require('./client');
 const when = require('when');
+const client = require('./client');
+
+const follow = require('./follow');
 
 var stompClient = require('./websocket-listener')
-const follow = require('./follow');
 
 const root = '/api';
 // end::vars[]
@@ -83,7 +84,7 @@ class App extends React.Component {
 	}
 
 	onUpdate(employee, updatedEmployee) {
-		if (employee.entity.manager.name === this.state.loggedInManager) {
+		if(employee.entity.manager.name === this.state.loggedInManager) {
 			updatedEmployee["manager"] = employee.entity.manager;
 			client({
 				method: 'PUT',
@@ -94,6 +95,7 @@ class App extends React.Component {
 					'If-Match': employee.headers.Etag
 				}
 			}).done(response => {
+				/* Let the websocket handler update the state */
 			}, response => {
 				if (response.status.code === 403) {
 					alert('ACCESS DENIED: You are not authorized to update ' +
@@ -216,7 +218,9 @@ class App extends React.Component {
 							  onNavigate={this.onNavigate}
 							  onUpdate={this.onUpdate}
 							  onDelete={this.onDelete}
-							  updatePageSize={this.updatePageSize}/>
+							  updatePageSize={this.updatePageSize}
+							  loggedInManager={this.loggedInManager}/>
+
 			</div>
 		)
 	}
@@ -250,23 +254,34 @@ class UpdateDialog extends React.Component{
 
 		const dialogId = "updateEmployee-" + this.props.employee.entity._links.self.href;
 
-		return (
-			<div key={this.props.employee.entity._links.self.href}>
-				<a href={"#" + dialogId}>Update</a>
-				<div id={dialogId} className="modalDialog">
-					<div>
-						<a href="#" title="Close" className="close">X</a>
+		const isManagerCorrect = this.props.employee.entity.manager.name === this.props.loggedInManager;
 
-						<h2>Update an employee</h2>
+		if (isManagerCorrect === false) {
+			return (
+				<div>
+					<a>Not Your Employee</a>
+				</div>
+			)
+		} else {
+			return (
+				<div>
+					<a href={"#" + dialogId}>Update</a>
 
-						<form>
-							{inputs}
-							<button onClick={this.handleSubmit}>Update</button>
-						</form>
+					<div id={dialogId} className="modalDialog">
+						<div>
+							<a href="#" title="Close" className="close">X</a>
+
+							<h2>Update an employee</h2>
+
+							<form>
+								{inputs}
+								<button onClick={this.handleSubmit}>Update</button>
+							</form>
+						</div>
 					</div>
 				</div>
-			</div>
-		)
+			)
+		}
 	}
 	
 }
@@ -362,12 +377,16 @@ class EmployeeList extends React.Component{
 
 
 	render() {
+		const pageInfo = this.props.page.hasOwnProperty("number") ?
+			<h3>Employees - Page {this.props.page.number + 1} of {this.props.page.totalPages}</h3> : null;
+
 		const employees = this.props.employees.map(employee =>
 			<Employee key={employee.entity._links.self.href}
 					  employee={employee}
 					  attributes={this.props.attributes}
 					  onUpdate={this.props.onUpdate}
-					  onDelete={this.props.onDelete}/>
+					  onDelete={this.props.onDelete}
+					  loggedInManager={this.props.loggedInManager}/>
 		);
 
 		const navLinks = [];
@@ -386,6 +405,7 @@ class EmployeeList extends React.Component{
 
 		return (
 			<div>
+				{pageInfo}
 				<input ref="pageSize" defaultValue={this.props.pageSize} onInput={this.handleInput}/>
 				<table>
 					<tbody>
@@ -393,6 +413,7 @@ class EmployeeList extends React.Component{
 						<th>First Name</th>
 						<th>Last Name</th>
 						<th>Description</th>
+						<th>Manager</th>
 						<th></th>
 						<th></th>
 					</tr>
@@ -441,6 +462,6 @@ class Employee extends React.Component{
 }
 
 ReactDOM.render(
-		<App />,
+		<App loggedInManager={document.getElementById('managername').innerHTML } />,
 		document.getElementById('react')
 	)

@@ -24,4 +24,5 @@ public class SpringDataJPAUserDetailsService implements UserDetailsService {
         return new User(manager.getName(), manager.getPassword(),
                 AuthorityUtils.createAuthorityList(manager.getRoles()));
     }
+
 }

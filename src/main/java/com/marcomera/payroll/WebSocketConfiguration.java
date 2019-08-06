@@ -13,7 +13,7 @@ public class WebSocketConfiguration implements WebSocketMessageBrokerConfigurer 
     static final String MESSAGE_PREFIX = "/topic";
 
     @Override
-    public void registerStompEndpoints(StompEndpointRegistry registry){
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/payroll").withSockJS();
     }
 
@@ -22,5 +22,4 @@ public class WebSocketConfiguration implements WebSocketMessageBrokerConfigurer 
         registry.enableSimpleBroker(MESSAGE_PREFIX);
         registry.setApplicationDestinationPrefixes("/app");
     }
-
 }

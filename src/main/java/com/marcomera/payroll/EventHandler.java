@@ -41,11 +41,9 @@ public class EventHandler {
         this.websocket.convertAndSend(
                 MESSAGE_PREFIX + "/updateEmployee", getPath(employee));
     }
-
     private String getPath(Employee employee) {
         return this.entityLinks.linkForSingleResource(employee.getClass(),
                 employee.getId()).toUri().getPath();
-
     }
 
 }
